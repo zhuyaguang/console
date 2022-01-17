@@ -28,8 +28,9 @@ import {
   isEmpty,
   trimStart,
   isNumber,
-  omit,
   pick,
+  pickBy,
+  endsWith,
   replace,
   merge as _merge,
 } from 'lodash'
@@ -656,15 +657,8 @@ const deal_With_Dot = hard => {
   cancel_Num_Dot(cpuAndMemory, hard)
 }
 
-export const getContainerGpu = item => {
+export const cancelContainerDot = item => {
   if (!isEmpty(get(item, 'resources', {}))) {
-    const gpu = get(item, 'resources.gpu', { type: '', value: '' })
-    item.resources.limits = pick(item.resources.limits, ['cpu', 'memory'])
-    if (gpu.type !== '' && gpu.value !== '') {
-      const value = isUndefined(gpu.value) ? '' : gpu.value
-      set(item, `resources.limits["${gpu.type}"]`, value)
-      set(item, `resources.requests["${gpu.type}"]`, value)
-    }
     const cpuAndMemory = pick(item.resources, ['requests', 'limits'])
     Object.keys(cpuAndMemory).forEach(key => {
       cancel_Num_Dot(cpuAndMemory[key], item.resources[key])
@@ -672,32 +666,7 @@ export const getContainerGpu = item => {
   }
 }
 
-export const omitJobGpuLimit = (data, path) => {
-  const containers = get(data, path, [])
-  if (containers.length > 0) {
-    const newContainer = containers.map(item => {
-      const gpu = get(item, 'resources.gpu', {})
-      if (isEmpty(gpu.type)) {
-        return item
-      }
-      if (
-        isEmpty(gpu.type) ||
-        isEmpty(gpu.value) ||
-        isUndefined(gpu.type) ||
-        isUndefined(gpu.value)
-      ) {
-        const limits = get(item, 'resources.limits', {})
-        const requests = get(item, 'resources.requests', {})
-        set(item, 'resources.limits', omit(limits, `${gpu.type}`))
-        set(item, 'resources.requests', omit(requests, `${gpu.type}`))
-      }
-      return omit(item, 'resources.gpu')
-    })
-    set(data, path, newContainer)
-  }
-}
-
-export const getGpuFromRes = data => {
+export const LimitsEqualRequests = data => {
   if (data.length > 0) {
     const limits = get(data, '[0].limit.default', {})
     const requests = get(data, '[0].limit.defaultRequest', {})
@@ -708,23 +677,6 @@ export const getGpuFromRes = data => {
     }
     if (limitItem('memory') === reqItem('memory')) {
       set(data[0].limit, 'defaultRequest.memory', undefined)
-    }
-    const gpu = isEmpty(limits) ? {} : omit(limits, ['cpu', 'memory'])
-    const gpuKey = Object.keys(gpu)[0]
-    if (isEmpty(gpu)) {
-      set(data[0].limit, 'gpu', {
-        type: supportGpuType[0],
-        value: '',
-      })
-    } else {
-      data[0] = omit(data[0], [
-        `limit.default['${gpuKey}']`,
-        `limit.defaultRequest['${gpuKey}']`,
-      ])
-      set(data[0].limit, 'gpu', {
-        type: gpuKey,
-        value: Object.values(gpu)[0],
-      })
     }
   }
 }
@@ -748,16 +700,10 @@ export const limits_Request_EndsWith_Dot = ({ limits, requests }) => {
   return { limits: result[0], requests: result[1] }
 }
 
-export const multiCluster_overrides_gpu = overrides => {
+export const multiCluster_overrides_Dot = overrides => {
   overrides.forEach(clusterOverride => {
     clusterOverride.clusterOverrides.forEach(item => {
       if (item.path.endsWith('resources')) {
-        const gpu = get(item.value, 'gpu', {})
-        if (!isEmpty(gpu) && gpu.type !== '' && gpu.value !== '') {
-          set(item.value, `limits["${gpu.type}"]`, gpu.value)
-          set(item.value, `requests["${gpu.type}"]`, gpu.value)
-        }
-        item.value = omit(item.value, 'gpu')
         Object.keys(item.value).forEach(key => {
           cancel_Num_Dot(item.value[key], item.value[key])
         })
@@ -773,14 +719,18 @@ export const resourceLimitKey = [
   'requests.memory',
 ]
 
-export const gpuTypeArr = ['requests.nvidia.com/gpu', 'limits.nvidia.com/gpu']
-
-export const supportGpuType = ['nvidia.com/gpu']
-
 const accessModeMapper = {
   ReadWriteOnce: 'RWO',
   ReadOnlyMany: 'ROX',
   ReadWriteMany: 'RWX',
+}
+
+export const gpuLimitsArr = objData => {
+  const supportGpu = globals.config.supportGpuType
+  const gpusObj = pickBy(objData, (_, key) =>
+    supportGpu.some(type => endsWith(key, type))
+  )
+  return Object.keys(gpusObj).map(key => ({ [key]: gpusObj[key] }))
 }
 
 export const map_accessModes = accessModes =>

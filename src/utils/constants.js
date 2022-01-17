@@ -528,6 +528,7 @@ export const PATTERN_PORT = /^([0-9]|[1-9]\d{1,3}|[1-5]\d{4}|6[0-4]\d{3}|65[0-4]
 export const PATTERN_IMAGE_TAG = /^(.*?)([0-9a-zA-Z/]*)(:[-.\w]*[0-9a-zA-Z])*$/
 export const PATTERN_APPTEMPLATE_VERSION = /[a-zA-Z0-9](\.?-?[a-zA-Z0-9])+(\s?\[?[a-zA-Z0-9]+\.?-?\]?)*/
 export const PATTERN_UTC_TIME = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+Z/
+export const PATTERN_ENV_NAME = /^[^0-9][a-zA-Z0-9_]*$/
 
 export const PIPELINE_TASKS = {
   All: [
@@ -1108,17 +1109,6 @@ export const APP_LABEL_MODULES = [
 export const NODE_ROLE_TAG_TYPE = {
   master: 'secondary',
   worker: 'default',
-}
-
-export const MAPPER_GPU_SPEC_PATH = {
-  Deployment: 'spec.template.spec.containers',
-  StatefulSet: 'spec.template.spec.containers',
-  Job: 'spec.template.spec.containers',
-  CronJob: 'spec.jobTemplate.spec.template.spec.containers',
-  Federate_Deployment: 'spec.template.spec.template.spec.containers',
-  Federate_StatefulSet: 'spec.template.spec.template.spec.containers',
-  app_deployment: 'Deployment.spec.template.spec.containers',
-  app_workload: 'workload.spec.template.spec.containers',
 }
 
 export const OMIT_TOTAL_REPLICAS = kind => [

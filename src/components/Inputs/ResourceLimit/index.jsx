@@ -19,7 +19,15 @@
 import React from 'react'
 import PropTypes from 'prop-types'
 import classnames from 'classnames'
-import { get, set, isEqual, isFinite, isEmpty, isNaN, omit } from 'lodash'
+import {
+  get,
+  set,
+  isEqual,
+  isFinite,
+  isEmpty,
+  isNaN,
+  isUndefined,
+} from 'lodash'
 
 import {
   Icon,
@@ -30,7 +38,7 @@ import {
   Select,
 } from '@kube-design/components'
 
-import { cpuFormat, memoryFormat, supportGpuType } from 'utils'
+import { cpuFormat, memoryFormat } from 'utils'
 
 import Slider from './Slider'
 
@@ -162,8 +170,6 @@ export default class ResourceLimit extends React.Component {
       cpuUnit
     )
 
-    const gpuLimits = ResourceLimit.getWorkspaceGpuLimitValue(props, 'value')
-
     return {
       requests: {
         cpu: cpuRequests,
@@ -181,29 +187,27 @@ export default class ResourceLimit extends React.Component {
         cpu: isNaN(workspaceCpuLimits) ? 'Not Limited' : workspaceCpuLimits,
         memory: isNaN(workspaceMeoLimit) ? 'Not Limited' : workspaceMeoLimit,
       },
-      workspaceGpuLimits: {
-        value: gpuLimits === '' ? 'Not limited' : gpuLimits,
-      },
       gpu: ResourceLimit.gpuSetting(props),
     }
   }
 
   static getGpuFromProps(value) {
-    const defaultGpuType = supportGpuType[0]
-    const gpuValue = get(value, 'gpu.value', '')
-    const gpuType =
-      get(value, 'gpu.type', '') === ''
-        ? defaultGpuType
-        : get(value, 'gpu.type')
+    // get gpu config from requests field
+    const supportGpuType = globals.config.supportGpuType
     if (!value) {
       return {
-        type: defaultGpuType,
+        type: supportGpuType[0],
         value: '',
       }
     }
+    // The value may not have requests field
+    const types = Object.keys(get(value, 'requests', {})).filter(key =>
+      supportGpuType.some(item => key.endsWith(item))
+    )
+    const type = !isEmpty(types) ? types[0] : supportGpuType[0]
     return {
-      value: gpuValue,
-      type: gpuType,
+      type,
+      value: !isEmpty(types) ? value.requests[`${type}`] : '',
     }
   }
 
@@ -211,13 +215,6 @@ export default class ResourceLimit extends React.Component {
     const value = get(props, 'value', {})
     const defaultValue = get(props, 'defaultValue', {})
     if (!isEmpty(value)) {
-      const gpuInfo = omit(value.limits, ['cpu', 'memory'])
-      if (!isEmpty(gpuInfo)) {
-        return {
-          type: Object.keys(gpuInfo)[0],
-          value: Object.values(gpuInfo)[0],
-        }
-      }
       return ResourceLimit.getGpuFromProps(value)
     }
     if (!isEmpty(defaultValue)) {
@@ -248,10 +245,6 @@ export default class ResourceLimit extends React.Component {
 
   static getWorkspaceLimitValue(props, key) {
     return get(props, `workspaceLimitProps.limits.${key}`, 'Not Limited')
-  }
-
-  static getWorkspaceGpuLimitValue(props, key) {
-    return get(props, `workspaceLimitProps.gpuLimit.${key}`, 'Not Limited')
   }
 
   cpuFormatter = value => {
@@ -287,7 +280,7 @@ export default class ResourceLimit extends React.Component {
   }
 
   get gpuOption() {
-    return supportGpuType.reduce(
+    return globals.config.supportGpuType.reduce(
       (prev, value) => [
         ...prev,
         {
@@ -385,7 +378,6 @@ export default class ResourceLimit extends React.Component {
       gpu,
       workspaceLimits: wsL,
       workspaceRequests: wsR,
-      workspaceGpuLimits: gpuL,
     } = this.state
 
     this.setState(
@@ -398,11 +390,22 @@ export default class ResourceLimit extends React.Component {
           ),
           limitCpuError: this.checkNumOutLimit(limits.cpu, wsL.cpu),
           limitMemoryError: this.checkNumOutLimit(limits.memory, wsL.memory),
-          gpuLimitError: this.checkNumOutLimit(gpu.value, gpuL.value),
+          gpuLimitError: this.checkGpuOutOfLimit(gpu),
         },
       },
       this.triggerChange
     )
+  }
+
+  checkGpuOutOfLimit = gpu => {
+    const { type } = gpu
+    const limitsArr = get(this.props, `workspaceLimitProps.gpuLimit`, [])
+    const limitRes = limitsArr.filter(item =>
+      Object.keys(item)[0].endsWith(type)
+    )
+    const limit =
+      limitRes.length > 0 ? Object.values(limitRes[0])[0] : 'Not Limited'
+    return this.checkNumOutLimit(gpu.value, limit)
   }
 
   checkNumOutLimit = (num, limit) => {
@@ -447,7 +450,15 @@ export default class ResourceLimit extends React.Component {
     if (limits.memory > 0 && limits.memory < Infinity) {
       set(result, 'limits.memory', `${limits.memory}${memoryUnit}`)
     }
-    set(result, 'gpu', gpu)
+
+    // pass gpu input config into limits and requests field
+    if (!!gpu.type && !!gpu.value) {
+      set(result, 'limits', { ...result.limits, [`${gpu.type}`]: gpu.value })
+      set(result, 'requests', {
+        ...result.requests,
+        [`${gpu.type}`]: gpu.value,
+      })
+    }
 
     onChange(result)
   }
@@ -521,7 +532,7 @@ export default class ResourceLimit extends React.Component {
           value: this.state.gpu.value,
         },
       },
-      this.triggerChange
+      this.checkAndTrigger
     )
   }
 
@@ -531,21 +542,21 @@ export default class ResourceLimit extends React.Component {
 
   renderGpuTip = () => {
     const { workspaceLimitProps: pWL } = this.props
+    const { gpu } = this.state
+    const findResult = pWL?.gpuLimit.filter(item => {
+      return isEmpty(item) ? item : Object.keys(item)[0].endsWith(gpu.type)
+    })[0]
 
     return (
       <div className={styles.message}>
         <span>{t('GPU_TYPE')}:</span>
-        <span>
-          {get(pWL, 'gpuLimit.type')
-            ? get(pWL, 'gpuLimit.type')
-            : t('Not Limited')}
-        </span>
+        <span>{isUndefined(findResult) ? t('Not Limited') : gpu.type}</span>
         <br />
         <span>{t('GPU_LIMIT')}:</span>
         <span>
-          {get(pWL, 'gpuLimit.value')
-            ? get(pWL, 'gpuLimit.value')
-            : t('Not Limited')}
+          {isUndefined(findResult)
+            ? t('Not Limited')
+            : Object.values(findResult)[0]}
         </span>
       </div>
     )

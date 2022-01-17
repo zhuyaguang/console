@@ -29,9 +29,11 @@ import {
   reduce,
   mergeWith,
   isUndefined,
+  pickBy,
+  endsWith,
 } from 'lodash'
 import React from 'react'
-import { generateId, getContainerGpu, resourceLimitKey } from 'utils'
+import { generateId, cancelContainerDot, resourceLimitKey } from 'utils'
 import { MODULE_KIND_MAP } from 'utils/constants'
 import { getLeftQuota } from 'utils/workload'
 
@@ -275,8 +277,12 @@ export default class ContainerSetting extends React.Component {
   }
 
   transformGpu = data => {
+    const supportGpu = globals.config.supportGpuType
+    const gpuArr = data.map(item =>
+      pickBy(item, (_, key) => supportGpu.some(type => endsWith(key, type)))
+    )
     return reduce(
-      data,
+      gpuArr,
       (total, current) => {
         const hasKey = get(total, `${Object.keys(current)[0]}`)
         if (hasKey) {
@@ -512,11 +518,11 @@ export default class ContainerSetting extends React.Component {
     })
 
     _initContainers.forEach(item => {
-      getContainerGpu(item)
+      cancelContainerDot(item)
     })
 
     _containers.forEach(item => {
-      getContainerGpu(item)
+      cancelContainerDot(item)
     })
 
     set(this.fedFormTemplate, `${this.prefix}spec.containers`, _containers)
